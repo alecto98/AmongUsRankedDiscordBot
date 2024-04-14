@@ -37,3 +37,10 @@ This project is licensed under the MIT License.
 **Note**
 
 This project is still under development. Expect frequent updates and improvements.
+
+![image](https://github.com/ABraik-bit/AmongUsRankedDiscordBot/assets/65469848/5e9e3cbb-303e-4df6-a19d-50b2fc6e83b2)
+![image](https://github.com/ABraik-bit/AmongUsRankedDiscordBot/assets/65469848/790fc03f-d67b-429f-ad8b-af75509b565e)
+![image](https://github.com/ABraik-bit/AmongUsRankedDiscordBot/assets/65469848/181a8160-6735-4407-908f-8a84ab4447da)
+![image](https://github.com/ABraik-bit/AmongUsRankedDiscordBot/assets/65469848/02471835-dc92-4b00-a7fa-0b91b102bda6)
+
+
