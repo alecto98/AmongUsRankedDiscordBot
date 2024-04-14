@@ -1,0 +1,13 @@
+C:\Users\Ayman\ImpostorPlugins\DiscordBot\bin\Debug\net8.0\DiscordBot.deps.json
+C:\Users\Ayman\ImpostorPlugins\DiscordBot\bin\Debug\net8.0\DiscordBot.dll
+C:\Users\Ayman\ImpostorPlugins\DiscordBot\bin\Debug\net8.0\DiscordBot.pdb
+C:\Users\Ayman\ImpostorPlugins\DiscordBot\obj\Debug\net8.0\DiscordBot.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\Ayman\ImpostorPlugins\DiscordBot\obj\Debug\net8.0\DiscordBot.AssemblyInfoInputs.cache
+C:\Users\Ayman\ImpostorPlugins\DiscordBot\obj\Debug\net8.0\DiscordBot.AssemblyInfo.cs
+C:\Users\Ayman\ImpostorPlugins\DiscordBot\obj\Debug\net8.0\DiscordBot.csproj.CoreCompileInputs.cache
+C:\Users\Ayman\ImpostorPlugins\DiscordBot\obj\Debug\net8.0\DiscordBot.sourcelink.json
+C:\Users\Ayman\ImpostorPlugins\DiscordBot\obj\Debug\net8.0\DiscordBot.dll
+C:\Users\Ayman\ImpostorPlugins\DiscordBot\obj\Debug\net8.0\refint\DiscordBot.dll
+C:\Users\Ayman\ImpostorPlugins\DiscordBot\obj\Debug\net8.0\DiscordBot.pdb
+C:\Users\Ayman\ImpostorPlugins\DiscordBot\obj\Debug\net8.0\ref\DiscordBot.dll
+C:\Users\Ayman\ImpostorPlugins\DiscordBot\obj\Debug\net8.0\DiscordBot.csproj.AssemblyReference.cache
