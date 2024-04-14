@@ -310,7 +310,7 @@ class DiscordBot:
         )
 
 if __name__ == "__main__":
-    token = "MTIyNTY2MDA5OTUyODM2NDA2Mw.G64zeZ.gzkofqGVov-ZNJyP5AQ4nxqM93Ts8U12iYhkJo"
+    token = "XXXX"
     channels = [
         (1200119601627926629, 1200120470616428545),
         (1200119662680219658, 1200120538341834782),
