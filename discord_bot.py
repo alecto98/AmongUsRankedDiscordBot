@@ -520,7 +520,7 @@ class DiscordBot:
         )
 
 if __name__ == "__main__":
-    token = "MTIyNTY2MDA5OTUyODM2NDA2Mw.GGpiZ4.l8bfLQF12kCzbRvngFm-lHxOXMTOGCmw4tz-E4"
+    token = "XXXXX"
     channels = {
     'ranked1': {'voice_channel_id': 1200119601627926629, 'text_channel_id': 1200120470616428545, 'members': [], 'members_in_match': []},
     'ranked2': {'voice_channel_id': 1200119662680219658, 'text_channel_id': 1200120538341834782, 'members': [], 'members_in_match': []},
