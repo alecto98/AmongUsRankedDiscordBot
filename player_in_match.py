@@ -90,18 +90,18 @@ class PlayerInMatch:
             
         elif self.team == 'crewmate': #bad crewmate -0.30 /// good crewmate 0.20
             if self.voted_wrong_on_crit: self.performance -= 0.30
-            if self.correct_vote_on_eject: self.performance += 0.20
+            if self.correct_vote_on_eject: self.performance += (self.correct_vote_on_eject *0.20)
             if self.right_vote_on_crit_but_loss: self.performance +=0.20
 
         if self.won:
             if self.died_first_round:
-                self.performance = 0.65
+                self.performance = 0.60
             self.p = (1 - odds_of_winning)
             self.p *= self.performance
 
         else:
             if self.died_first_round:
-                self.performance = 1.35
+                self.performance = 1.90
             self.p = odds_of_winning
             self.p /= self.performance
             self.p *= -1

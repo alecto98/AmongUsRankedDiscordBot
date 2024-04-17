@@ -23,3 +23,16 @@ class Match:
     def get_players(self) -> PlayersList:
         return self.players.players
     
+    def print_match(self):
+        filename = "matches.csv"
+        
+        string = ""
+        players = self.get_players()
+        for player in players:
+            if player.team == "crewmate":
+                elo_gain = f'c{player.crewmate_elo_gain}'
+            else:
+                elo_gain = f'i{player.impostor_elo_gain}'
+            string += f"{player.name}{elo_gain},"
+        with open(filename, 'a') as file:
+            file.write(string+"\n")

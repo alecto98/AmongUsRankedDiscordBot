@@ -21,12 +21,11 @@ class FileHandler:
     def get_players_info_from_leaderboard(self, players_list : PlayersList):
         for player in players_list.players:
             old_player = self.leaderboard.is_player_in_leaderboard(player.name)
-            if old_player:
-                player.crewmate_current_elo = self.leaderboard.get_player_crew_elo(player.name)
-                player.impostor_current_elo = self.leaderboard.get_player_imp_elo(player.name)
-                player.current_elo = self.leaderboard.get_player_elo(player.name)
-            else:
+            if not old_player:
                 self.leaderboard.new_player(player.name)
+            player.crewmate_current_elo = self.leaderboard.get_player_crew_elo(player.name)
+            player.impostor_current_elo = self.leaderboard.get_player_imp_elo(player.name)
+            player.current_elo = self.leaderboard.get_player_elo(player.name)
 
     def get_players_from_df(self, match_df) -> PlayersList:
         players_array = [x.strip() for x in match_df.players.split(',')]
@@ -34,8 +33,6 @@ class FileHandler:
         players_list = PlayersList()
         result = match_df.result
         for player_name in players_array:
-            if not self.leaderboard.is_player_in_leaderboard(player_name):
-                self.leaderboard.new_player(player_name)
             team = "impostor" if player_name in impostors_array else "crewmate"
             players_list.add_player(PlayerInMatch(name=player_name, team=team))
         self.get_players_info_from_leaderboard(players_list)
@@ -153,7 +150,7 @@ class FileHandler:
         except Exception as e:
             print(str(e)+"Error reading match from file"+str(json_file))
             return None
-        
+
         if match_df.result in ["Canceled", "Cancelled"] or events_df is None or match_df is None:
             try:
                 players_list = self.get_players_from_df(match_df)
@@ -181,21 +178,23 @@ class FileHandler:
             pd.DataFrame(columns=['Match File Name']).to_csv(self.processed_matches_csv, index=False)
         processed_matches = set(pd.read_csv(self.processed_matches_csv)['Match File Name'])
         sorted_files_with_match = self.get_sorted_files_with_match()
-
+        match = None  
         for file in sorted_files_with_match:
             if file not in processed_matches:
-                # print(file)
-                match = self.match_from_file(self.matches_path, file)
-                if match:
+                new_match = self.match_from_file(self.matches_path, file)
+                if new_match:
+                    match = new_match  # Assign the value of new_match to match
                     processed_matches.add(file)
         pd.DataFrame(processed_matches, columns=['Match File Name']).to_csv(self.processed_matches_csv, index=False)
         if match:
             return match
+        else:
+            return None
 
 
-# path = "~/eloScripts/matches_full/"
-# file_name =  "2JLP1bguhCOpOTv1_match.json"
-# f = FileHandler(path, "db_Full.csv")
+# path = "~/Resistance/matches_full"
+
+# f = FileHandler(path, "leaderboard_full.csv")
 # f.process_unprocessed_matches()
 # match_z = f.match_from_file(path,file_name)
 # print(match_z.players.__dict__)
