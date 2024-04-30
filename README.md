@@ -11,7 +11,7 @@ Among Us Ranked Discord Bot is a fully functional bot designed for the Imp serve
 
 **Developer**
 
-👨‍💻 Developer: ABraik, xer
+👨‍💻 Developer: ABraik
 
 **Installation**
 
