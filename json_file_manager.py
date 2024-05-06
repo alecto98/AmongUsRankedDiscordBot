@@ -97,6 +97,6 @@ class JsonFileManager:
                     print(f"Player name '{player_name}' updated to '{new_name}' in {filename}")
 
 # Example usage:
-directory = "~/Plugin/MatchLog"
+directory = "MatchLog"
 json_manager = JsonFileManager(directory)
 json_manager.sort_and_assign_match_ids()

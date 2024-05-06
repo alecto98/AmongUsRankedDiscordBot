@@ -3,6 +3,7 @@ from player_in_match import PlayerInMatch
 from match_class import Match
 from rapidfuzz import process
 from rapidfuzz import fuzz
+import ast
 import difflib
 
 class Leaderboard:
@@ -15,6 +16,16 @@ class Leaderboard:
         try:
             self.leaderboard = pd.read_csv(self.csv_file)
             self.leaderboard.set_index('Rank', inplace=True)
+            self.leaderboard = self.leaderboard.fillna(0)
+            self.leaderboard = self.leaderboard.astype({'Player Discord': int,
+                                                        'MMR': float, 
+                                                        'Crewmate MMR': float, 
+                                                        'Impostor MMR': float,
+                                                        'Voting Accuracy (Crewmate games)': float,
+                                                        })
+            self.leaderboard['Change In MMR'] = self.leaderboard['Change In MMR'].apply(ast.literal_eval)
+            self.leaderboard['Change In Crewmate MMR'] = self.leaderboard['Change In Crewmate MMR'].apply(ast.literal_eval)
+            self.leaderboard['Change In Impostor MMR'] = self.leaderboard['Change In Impostor MMR'].apply(ast.literal_eval)
         except FileNotFoundError:
             self.create_empty_leaderboard()
 
@@ -36,7 +47,10 @@ class Leaderboard:
             'Number Of Games Won',
             'Number Of Games Died First',
             'Threw on Crit', 
-            'Voted Right on Crit but Lost'
+            'Voted Right on Crit but Lost',
+            'Change In MMR',
+            'Change In Crewmate MMR', 
+            'Change In Impostor MMR'
             # , 
             # 'Previous Games Voting Accuracy', 'Change In Crewmate MMR', 'Change In Impostor MMR',
             # 'Crewmate Win Streak', 'Best Crewmate Win Streak',
@@ -47,13 +61,13 @@ class Leaderboard:
 
 
     def save_leaderboard(self):
-        self.leaderboard.to_csv(self.csv_file)
+        self.leaderboard.to_csv(self.csv_file, float_format='%.3f')
 
 
     def new_player(self, player_name):
         new_player_data = {
             'Player Name': player_name,
-            'Player Discord': "",
+            'Player Discord': 0,
             'MMR': 1000,
             'Crewmate MMR': 1000,
             'Impostor MMR': 1000,
@@ -66,7 +80,10 @@ class Leaderboard:
             'Number Of Games Won': 0,
             'Number Of Games Died First': 0,
             'Threw on Crit': 0, 
-            'Voted Right on Crit but Lost': 0
+            'Voted Right on Crit but Lost': 0,
+            'Change In MMR':[],
+            'Change In Crewmate MMR':[], 
+            'Change In Impostor MMR':[]
             #,
             # 'Best Crewmate Win Streak': 0,
             # 'Impostor Win Streak': 0,
@@ -90,6 +107,9 @@ class Leaderboard:
             self.leaderboard.at[index, 'Crewmate MMR'] = round(self.leaderboard.at[index, 'Crewmate MMR'], 3)
             self.leaderboard.at[index, 'Impostor MMR'] -= player.impostor_mmr_gain
             self.leaderboard.at[index, 'Impostor MMR'] = round(self.leaderboard.at[index, 'Impostor MMR'], 3)
+            self.leaderboard.at[index, 'Change In MMR'].append(player.mmr_gain*-1)
+            self.leaderboard.at[index, 'Change In Crewmate MMR'].append(player.crewmate_mmr_gain*-1)
+            self.leaderboard.at[index, 'Change In Impostor MMR'].append(player.impostor_mmr_gain*-1)
             self.leaderboard.at[index, 'Total Number Of Games Played'] -= 1
             if player.won: self.leaderboard.at[index, 'Number Of Games Won'] -= 1
 
@@ -101,6 +121,9 @@ class Leaderboard:
             self.leaderboard.at[index, 'Impostor MMR'] += player.impostor_mmr_gain
             self.leaderboard.at[index, 'Impostor MMR'] = round(self.leaderboard.at[index, 'Impostor MMR'], 3)
             self.leaderboard.at[index, 'Total Number Of Games Played'] += 1
+            self.leaderboard.at[index, 'Change In MMR'].append(player.mmr_gain)
+            self.leaderboard.at[index, 'Change In Crewmate MMR'].append(player.crewmate_mmr_gain)
+            self.leaderboard.at[index, 'Change In Impostor MMR'].append(player.impostor_mmr_gain)
             if player.won: self.leaderboard.at[index, 'Number Of Games Won'] += 1
             
         if player.team == "crewmate":
@@ -287,7 +310,7 @@ class Leaderboard:
     
 
     def get_player_by_discord(self, discord_id):
-        row = self.leaderboard[self.leaderboard['Player Discord'] == str(discord_id)]
+        row = self.leaderboard[self.leaderboard['Player Discord'] == int(discord_id)]
         if not row.empty:
             row.reset_index(inplace=True, drop=False)
             return row.iloc[0]
@@ -299,7 +322,7 @@ class Leaderboard:
         player_row = self.get_player_row(player_name)
         if player_row is not None and not player_row.empty:
             index = player_row['Rank']
-            self.leaderboard.at[index, 'Player Discord'] = str(discord_id)
+            self.leaderboard.at[index, 'Player Discord'] = int(discord_id)
             self.save_leaderboard()
             return True
         else:
@@ -310,7 +333,7 @@ class Leaderboard:
         player_row = self.get_player_row(player_name)
         if player_row is not None and not player_row.empty:
             index = player_row['Rank'] 
-            self.leaderboard.at[index, 'Player Discord'] = ""
+            self.leaderboard.at[index, 'Player Discord'] = 0
             self.save_leaderboard()
             return True
         else:
@@ -318,7 +341,7 @@ class Leaderboard:
     
 
     def players_with_empty_discord(self):
-        players_with_empty_discord = self.leaderboard[self.leaderboard['Player Discord'].isnull()]
+        players_with_empty_discord = self.leaderboard[self.leaderboard['Player Discord'] == 0]
         if not players_with_empty_discord.empty:
             return players_with_empty_discord
         else:
@@ -378,18 +401,33 @@ class Leaderboard:
     
     
     def mmr_change(self, player_row, value):
-        value = int(value)
+        value = float(value)
         index = player_row['Rank']
-        self.leaderboard.at[index, 'MMR'] += value
-        self.leaderboard.at[index, 'MMR'] = round(self.leaderboard.at[index, 'MMR'],3)
         self.leaderboard.at[index, 'Crewmate MMR'] += value
         self.leaderboard.at[index, 'Crewmate MMR'] = round(self.leaderboard.at[index, 'Crewmate MMR'], 3)
         self.leaderboard.at[index, 'Impostor MMR'] += value
         self.leaderboard.at[index, 'Impostor MMR'] = round(self.leaderboard.at[index, 'Impostor MMR'], 3)
+        self.leaderboard.at[index, 'MMR'] = round((self.leaderboard.at[index, 'Crewmate MMR']+self.leaderboard.at[index, 'Impostor MMR'])/2,3)
         self.save_leaderboard()
 
 
-    
+    def mmr_change_crew(self, player_row, value):
+        value = float(value)
+        index = player_row['Rank']
+        self.leaderboard.at[index, 'Crewmate MMR'] += value
+        self.leaderboard.at[index, 'Crewmate MMR'] = round(self.leaderboard.at[index, 'Crewmate MMR'], 3)
+        self.leaderboard.at[index, 'MMR'] = round((self.leaderboard.at[index, 'Crewmate MMR']+self.leaderboard.at[index, 'Impostor MMR'])/2,3)
+        self.save_leaderboard()
+
+
+    def mmr_change_imp(self, player_row, value):
+        value = float(value)
+        index = player_row['Rank']
+        self.leaderboard.at[index, 'Impostor MMR'] += value
+        self.leaderboard.at[index, 'Impostor MMR'] = round(self.leaderboard.at[index, 'Impostor MMR'], 3)
+        self.leaderboard.at[index, 'MMR'] = round((self.leaderboard.at[index, 'Crewmate MMR']+self.leaderboard.at[index, 'Impostor MMR'])/2,3)
+        self.save_leaderboard()
+
     # Add other methods as needed
 
 

@@ -36,6 +36,8 @@ class PlayerInMatch:
         self.k = 32
         self.color = None
         self.last_voted = None
+        self.finished_tasks_alive = False
+        self.finished_tasks_dead = False
         self.voted_wrong_on_crit = False #crew only 
         self.correct_vote_on_eject = 0 #crew only 
         self.right_vote_on_crit_but_loss = False #crew only 
@@ -85,13 +87,13 @@ class PlayerInMatch:
         if self.team == 'impostor':
             if self.ejected_early_as_imp: self.performance -= 0.15  
             if self.solo_imp : self.performance += 0.15 
-            if self.got_crew_voted > 0 : self.performance += (0.10 * self.got_crew_voted)
+            if self.got_crew_voted > 0 : self.performance += (0.07 * self.got_crew_voted)
             if self.kills_as_solo_imp > 0: self.performance += (0.07 * self.kills_as_solo_imp)
             if self.won_as_solo_imp : self.performance += 0.30
             
         elif self.team == 'crewmate': #bad crewmate -0.30 /// good crewmate 0.20
             if self.voted_wrong_on_crit: self.performance -= 0.30
-            if self.correct_vote_on_eject: self.performance += (self.correct_vote_on_eject *0.05)
+            if self.correct_vote_on_eject: self.performance += (self.correct_vote_on_eject *0.10)
             if self.right_vote_on_crit_but_loss: self.performance +=0.20
 
         if self.won:

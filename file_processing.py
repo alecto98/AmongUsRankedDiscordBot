@@ -7,7 +7,6 @@ from leaderboard import Leaderboard
 from datetime import datetime
 import json 
 import logging
-import joblib
 import numpy as np
 
 class FileHandler:
@@ -16,20 +15,18 @@ class FileHandler:
         logging.getLogger("pandas").setLevel(logging.CRITICAL)
         logging.getLogger("json").setLevel(logging.CRITICAL)
         logging.getLogger("datetime").setLevel(logging.CRITICAL)
-        logging.basicConfig(level=logging.ERROR, encoding='utf-8', format="%(asctime)s [%(levelname)s] %(message)s")
+        logging.basicConfig(level=logging.DEBUG, encoding='utf-8', format="%(asctime)s [%(levelname)s] %(message)s")
         self.logger = logging.getLogger('FileHandler')
         self.matches_path = os.path.expanduser(matches_path)
         self.processed_matches_csv = "processed_matches.csv"
         self.database_location = database_location
         self.leaderboard = Leaderboard(database_location)
         self.match = Match()
-        self.model = joblib.load('logistic_regression_model.pkl')  # regression model
 
 
     def df_from_json(self, path, json_file):
         match_df = pd.read_json(os.path.join(path, json_file), typ='series')
         events_df = pd.read_json(os.path.join(path, match_df.eventsLogFile), typ='series')
-        # self.logger.debug(f"Imported DataFrame from JSON file{json_file}")
         return match_df, events_df
 
 
@@ -68,19 +65,28 @@ class FileHandler:
 
 
     def calculate_percentage_of_winning(self, players:PlayersList):
-        def map_probability(probability):
-            if probability > 0.8:
-                return 0.4 + (probability * 0.52)
-            elif probability > 0.6:
-                return 0.72 + ((probability-0.6) / 2)
+        def winning_prob(avg_crew_elo, avg_imp_elo):
+            def log_function(diff):
+                a=0.07416865609596561 
+                b=0.02188284234744941
+                c=1.3188566776518948
+                d=-0.021900704104131766
+                return a * np.log(b * diff + c) + d
+
+            difference = avg_crew_elo - avg_imp_elo
+            if difference < 0:
+                difference = abs(difference)
+                prob_change = log_function(difference)
+                win_prob = 0.78 - prob_change
+                if win_prob < 0.62: win_prob = 0.62
+                return win_prob
             else:
-                return 0.57 + (probability * 0.32)
-        
-        player:PlayerInMatch
-        new_data = pd.DataFrame({'Avg Crewmate MMR': [players.avg_crewmate_mmr], 'Avg Impostor MMR': [players.avg_impostor_mmr]})
-        probabilities = self.model.predict_proba(new_data)[:, 1]
-        mapped_probability = map_probability(probabilities)
-        players.crewmate_win_rate = mapped_probability[0]
+                prob_change = log_function(difference)
+                win_prob = 0.78 + prob_change
+                if win_prob > 0.94: win_prob = 0.94
+                return win_prob
+            
+        players.crewmate_win_rate = winning_prob(players.avg_crewmate_mmr, players.avg_impostor_mmr)
         players.impostor_win_rate = 1 - players.crewmate_win_rate
 
         for player in players.players:
@@ -88,12 +94,15 @@ class FileHandler:
                 player.pecentage_of_winning = players.impostor_win_rate
             elif player.team == 'crewmate':
                 player.pecentage_of_winning = players.crewmate_win_rate
-        # new_data = pd.DataFrame({'Avg Impostor MMR': [players.avg_impostor_mmr], 'Avg Crewmate MMR': [players.avg_crewmate_mmr]})
-        # predictions = self.model.predict(new_data)
+
+        # a = 0.043290409437842466
+        # b = 7.855256175054392
+        # c = 98.05742514755777
+        # d = -0.19883086302819628
 
 
     def match_from_dataframe(self, match_df, events_df, players_list):
-        self.logger.debug(f"Filling Match object from Match/ Events dataframe for match{match_df.MatchID}")
+        self.logger.debug(f"Filling Match {match_df.MatchID} object from the events file")
         match = Match(id=match_df.MatchID, match_start_time=match_df.gameStarted,
                       result=match_df.result, players=players_list, event_file_name=match_df.eventsLogFile)
         death_happened = False
@@ -219,12 +228,11 @@ class FileHandler:
                 match.match_file_name = json_file
                 return match
             except:
-                self.logger.info(f"Error with file {match_df.eventsLogFile}")
+                self.logger.error(f"Error with file {match_df.eventsLogFile}")
 
         players_list = self.get_players_from_df(match_df)
         match = self.match_from_dataframe(match_df, events_df, players_list)
         match.match_file_name = json_file
-        
         return match
         
 
@@ -237,7 +245,6 @@ class FileHandler:
 
     def get_game_started_timestamp(self, file_name):
         file_path = os.path.join(self.matches_path, file_name)
-        
         with open(file_path, 'r') as file:
             data = json.load(file)
             game_started = data["gameStarted"]
@@ -257,7 +264,7 @@ class FileHandler:
                 match = self.match_from_file(file)
                 if match:
                     if match.result == "Canceled" or match.result == "Unknown":
-                        self.logger.info(f"skipped {match.match_file_name} because result is {match.result}")
+                        self.logger.info(f"Skipped {match.match_file_name} because result is {match.result}")
                     else:
                         # res = 0
                         # if match.result == "Crewmates Win":
@@ -390,11 +397,64 @@ class FileHandler:
         return match_data
     
 
-    def mine_matches_data(self):
+    def change_player_name(self, old_name, new_name):
+        def read_json_file(filename):
+            with open(os.path.join(self.matches_path, filename), 'r') as file:
+                return json.load(file)
+    
+        def write_json_file(filename, data):
+            with open(os.path.join(self.matches_path, filename), 'w') as file:
+                json.dump(data, file, indent=4)
+
+        for filename in os.listdir(self.matches_path):
+            if filename.endswith('.json'):
+                data = read_json_file(filename)
+                change_made = False
+                
+                if 'players' in data:
+                    players = data['players'].split(',')
+                    if old_name in players:
+                        players[players.index(old_name)] = new_name
+                        data['players'] = ','.join(players)
+                        self.logger.debug(f"Player name '{old_name}' updated to '{new_name}' in {filename}")
+                        change_made = True
+                    impostors = data.get('impostors', '').split(', ')
+                    if old_name in impostors:
+                        impostors[impostors.index(old_name)] = new_name
+                        data['impostors'] = ', '.join(impostors)
+                        self.logger.debug(f"Impostor name '{old_name}' updated to '{new_name}' in {filename}")
+                        change_made = True
+
+                if isinstance(data, list):
+                    for event in data:
+                        for key in ['Name', 'Player', 'Target', 'Killer','DeadPlayer', 'Impostors']:
+                            if key in event:
+                                if event[key].endswith(" |"):
+                                    event[key] = event[key][:-2]  # Remove last two characters
+                                if event[key] == old_name:
+                                    change_made = True
+                                    event[key] = new_name
+                                if key == 'Impostors':
+                                    if old_name in event[key].split(','): 
+                                        event[key] = event[key].replace(old_name, new_name)
+                                        change_made = True
+                if change_made: 
+                    write_json_file(filename, data)
+                    self.logger.debug(f"Player name '{old_name}' updated to '{new_name}' in {filename}")
+
+        player_row = self.leaderboard.get_player_row(old_name)
+        if player_row is not None:
+            index = player_row['Rank']
+            self.leaderboard.leaderboard.at[index, 'Player Name'] = new_name
+            self.leaderboard.save_leaderboard()
+            self.logger.debug(f"Player name '{old_name}' updated to '{new_name}' in Leaderboard")
+
+
+    def mine_matches_data(self): #testing and development only
         match : Match
         sorted_files_with_match = self.get_sorted_files_with_match()
         match=None
-        data_df = pd.DataFrame(columns=['Avg Crewmate MMR', 'Avg Impostor MMR', 'Win Status'])
+        data_df = pd.DataFrame(columns=['MMR diff'])
         for file in sorted_files_with_match:
             match = self.match_from_file(file)
             if match:
@@ -404,7 +464,7 @@ class FileHandler:
                     res = 0
                     if match.result == "Crewmates Win":
                         res = 1
-                    data_df = pd.concat([pd.DataFrame([[round(match.players.avg_crewmate_mmr,1),round(match.players.avg_impostor_mmr,1),res]], columns=data_df.columns), data_df], ignore_index=True)
+                    data_df = pd.concat([pd.DataFrame([[round(match.players.avg_crewmate_mmr,1)-round(match.players.avg_impostor_mmr,1)]], columns=data_df.columns), data_df], ignore_index=True)
                     self.logger.info(f"Processed Match ID:{match.id}")
 
         data_df.to_csv('game_data.csv', index=False)
@@ -414,7 +474,12 @@ class FileHandler:
 ###############################################
 # path = "~/Resistance/Preseason/"
 
+# path = "~/plugins/MatchLogs/Preseason"
 # f = FileHandler(path, "leaderboard_full.csv")
+# print(f.find_matchfile_by_id(25))
+# match = f.process_match_by_id(25)
+# print(match)
+# f.mine_matches_data()
 # file_name = "QCoX1nqM5o2u11Js_match.json"
 
 # # # f.change_result_to_crew_win(485)

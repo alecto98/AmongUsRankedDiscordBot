@@ -1,7 +1,5 @@
 from player_in_match import PlayerInMatch
 import pandas as pd
-import joblib
-import sklearn #needed for ML processing
 from rapidfuzz import fuzz
 class PlayersList:
     def __init__(self) :
