@@ -41,7 +41,7 @@ sudo -u discordbot cp config/config.example.yaml config/config.yaml
 
 - Edit `config/config.yaml` and set your Discord bot token, guild/channel/role IDs, paths, and VIP role settings.
 - Edit `config/emojis.yaml` to match your server’s emoji names.
-- Add all emojis from the `zip for emojis.zip` file to your Discord server so names match what the bot expects.
+- This repo includes an archive `zip for emojis.zip` containing all required emojis. Upload every emoji from that ZIP into your Discord server so names match what the bot expects.
 
 ### 4) Build a single executable (optional)
 
