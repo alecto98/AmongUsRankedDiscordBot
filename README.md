@@ -11,14 +11,14 @@ Among Us Ranked Discord Bot is a fully functional bot designed for the Imp serve
 
 **Developer**
 
-👨‍💻 Developer: ABraik
+👨‍💻 Developer: Alecto
 
 **Installation**
 
 1. Clone the repository to your local machine.
 2. Ensure you have `discordbot.dll` added into your plugins in the Imp server.
 3. Start the bot by running `DiscordBot.py`.
-4. Make sure to update the channel name and your server ID in `DiscordBot.py` to match your server settings.
+4. Make sure to update the channel names and your server ID in `config.yaml` to match your server settings.
 
 **Usage**
 
@@ -30,17 +30,11 @@ Among Us Ranked Discord Bot is a fully functional bot designed for the Imp serve
 
 Contributions to the project are welcome. Feel free to fork the repository and submit pull requests for any enhancements or fixes.
 
-**License**
 
-This project is licensed under the MIT License.
 
-**Note**
-
-This project is still under development. Expect frequent updates and improvements.
-
-![image](https://github.com/ABraik-bit/AmongUsRankedDiscordBot/assets/65469848/5e9e3cbb-303e-4df6-a19d-50b2fc6e83b2)
-![image](https://github.com/ABraik-bit/AmongUsRankedDiscordBot/assets/65469848/790fc03f-d67b-429f-ad8b-af75509b565e)
-![image](https://github.com/ABraik-bit/AmongUsRankedDiscordBot/assets/65469848/181a8160-6735-4407-908f-8a84ab4447da)
-![image](https://github.com/ABraik-bit/AmongUsRankedDiscordBot/assets/65469848/02471835-dc92-4b00-a7fa-0b91b102bda6)
+![image](https://github.com/Alecto98/AmongUsRankedDiscordBot/assets/65469848/5e9e3cbb-303e-4df6-a19d-50b2fc6e83b2)
+![image](https://github.com/Alecto98/AmongUsRankedDiscordBot/assets/65469848/790fc03f-d67b-429f-ad8b-af75509b565e)
+![image](https://github.com/Alecto98/AmongUsRankedDiscordBot/assets/65469848/181a8160-6735-4407-908f-8a84ab4447da)
+![image](https://github.com/Alecto98/AmongUsRankedDiscordBot/assets/65469848/02471835-dc92-4b00-a7fa-0b91b102bda6)
 
 
