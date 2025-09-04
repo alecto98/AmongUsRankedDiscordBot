@@ -1,2 +1,6 @@
-mariadb
-json
+matplotlib
+rapidfuzz
+pandas
+discord
+pyinstaller
+pyyaml

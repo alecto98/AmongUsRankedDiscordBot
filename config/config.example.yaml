@@ -1,0 +1,97 @@
+# Among Us Ranked Discord Bot configuration (example)
+# Copy this file to config.yaml and fill in your real values locally.
+use: main
+
+main:
+  crewmate_current_mmr: 1000
+  impostor_current_mmr: 1000
+  current_mmr: 1000
+  token: "YOUR_DISCORD_BOT_TOKEN"
+  ranked_channels:
+    ranked1: {voice_channel_id: 0, text_channel_id: 0, role: 0, members: [], members_in_match: [], lobby_code: ""}
+    ranked2: {voice_channel_id: 0, text_channel_id: 0, role: 0, members: [], members_in_match: [], lobby_code: ""}
+    ranked3: {voice_channel_id: 0, text_channel_id: 0, role: 0, members: [], members_in_match: [], lobby_code: ""}
+    ranked4: {voice_channel_id: 0, text_channel_id: 0, role: 0, members: [], members_in_match: [], lobby_code: ""}
+    ranked5: {voice_channel_id: 0, text_channel_id: 0, role: 0, members: [], members_in_match: [], lobby_code: ""}
+    rankedvip: {voice_channel_id: 0, text_channel_id: 0, role: 0, members: [], members_in_match: [], lobby_code: ""}
+    rankedvip++: {voice_channel_id: 0, text_channel_id: 0, role: 0, members: [], members_in_match: [], lobby_code: ""}
+  guild_id: 0
+  match_logs_channel: 0
+  staff_role_id: 0
+  moderator_role_id: 0
+  cancels_channel: 0
+  ranked_chat: 0
+  bot_commands_channel: 0
+  admin_logs_channel: 0
+  blocked_role_id: 0
+  ranked_access_role_id: 0
+  ranked_queue_channel: 0
+  matches_path: "Preseason/"
+  season_name: "Season 1"
+  vip_roles:
+    VIP:
+      ids: [0]
+      balance: 3
+      mmr_type: double
+      refresh_days: 7
+    VIP++:
+      ids: [0]
+      balance: 5
+      mmr_type: double
+      refresh_days: 7
+    VIPElite:
+      ids: [0]
+      balance: 5
+      mmr_type: double
+      refresh_days: 7
+  premium_members_file: "vip/premiumMembers.csv"
+  vip_logs_directory: "vip/vip_logs"
+  special_matches_file: "vip/special_matches.csv"
+
+test:
+  crewmate_current_mmr: 1000
+  impostor_current_mmr: 1000
+  current_mmr: 1000
+  token: "YOUR_TEST_DISCORD_BOT_TOKEN"
+  ranked_channels:
+    ranked1: {voice_channel_id: 0, text_channel_id: 0, role: 0, members: [], members_in_match: [], lobby_code: ""}
+    ranked2: {voice_channel_id: 0, text_channel_id: 0, role: 0, members: [], members_in_match: [], lobby_code: ""}
+    ranked3: {voice_channel_id: 0, text_channel_id: 0, role: 0, members: [], members_in_match: [], lobby_code: ""}
+    ranked4: {voice_channel_id: 0, text_channel_id: 0, role: 0, members: [], members_in_match: [], lobby_code: ""}
+    ranked5: {voice_channel_id: 0, text_channel_id: 0, role: 0, members: [], members_in_match: [], lobby_code: ""}
+    rankedvip: {voice_channel_id: 0, text_channel_id: 0, role: 0, members: [], members_in_match: [], lobby_code: ""}
+    rankedvip++: {voice_channel_id: 0, text_channel_id: 0, role: 0, members: [], members_in_match: [], lobby_code: ""}
+  guild_id: 0
+  match_logs_channel: 0
+  staff_role_id: 0
+  moderator_role_id: 0
+  cancels_channel: 0
+  ranked_chat: 0
+  bot_commands_channel: 0
+  admin_logs_channel: 0
+  blocked_role_id: 0
+  ranked_access_role_id: 0
+  ranked_queue_channel: 0
+  matches_path: "Preseason/"
+  season_name: "Season test"
+  vip_roles:
+    VIP:
+      ids: [0]
+      balance: 3
+      mmr_type: double
+      refresh_days: 7
+    VIP++:
+      ids: [0]
+      balance: 5
+      mmr_type: double
+      refresh_days: 7
+    VIPElite:
+      ids: [0]
+      balance: 5
+      mmr_type: double
+      refresh_days: 7
+  premium_members_file: "vip/premiumMembers.csv"
+  vip_logs_directory: "vip/vip_logs"
+  special_matches_file: "vip/special_matches.csv"
+
+

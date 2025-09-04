@@ -1,151 +1,151 @@
 import pandas as pd
 import os
 from player_in_match import PlayerInMatch
-from players_list import PlayersList
 from match_class import Match
 from leaderboard import Leaderboard
+from leaderboard_events import EventsLeaderboard
 from datetime import datetime
-import json 
+import json
 import logging
-import numpy as np
+import yaml
+
+# Load config from YAML
+with open(os.path.join('config', 'config.yaml'), 'r', encoding='utf-8') as f:
+    all_configs = yaml.safe_load(f)
+use_config = all_configs['use'] if 'use' in all_configs else 'main'
+config = all_configs[use_config]
 
 class FileHandler:
-    def __init__(self, matches_path, database_location):
+    def __init__(self, matches_path, season_name:str):
+        self.season_name = season_name.replace(" ", "_")
         logging.getLogger("os").setLevel(logging.CRITICAL)
         logging.getLogger("pandas").setLevel(logging.CRITICAL)
         logging.getLogger("json").setLevel(logging.CRITICAL)
         logging.getLogger("datetime").setLevel(logging.CRITICAL)
-        logging.basicConfig(level=logging.DEBUG, encoding='utf-8', format="%(asctime)s [%(levelname)s] %(message)s")
+        logging.basicConfig(level=logging.INFO, encoding='utf-8', format="%(asctime)s [%(levelname)s] %(message)s")
         self.logger = logging.getLogger('FileHandler')
         self.matches_path = os.path.expanduser(matches_path)
-        self.processed_matches_csv = "processed_matches.csv"
-        self.database_location = database_location
-        self.leaderboard = Leaderboard(database_location)
-        self.match = Match()
+        self.leaderboard = Leaderboard(f"{self.season_name}_leaderboard.csv")
+        self.events_leaderboard = EventsLeaderboard(f"{self.season_name}_events.csv")
+        self.special_matches_file = config['special_matches_file']  # Add this line
 
+    def parse_time(self, time_str):
+        """Parse time robustly; if missing or malformed, return a safe minimal datetime."""
+        if not time_str:
+            self.logger.warning("Missing game start time; defaulting to minimal datetime")
+            return datetime.min
+
+        time_formats = ["%m/%d/%Y %H:%M:%S", "%m/%d/%Y %I:%M:%S %p"]
+        for time_format in time_formats:
+            try:
+                return datetime.strptime(str(time_str), time_format)
+            except ValueError:
+                continue
+
+        self.logger.warning(f"Time format not recognized: {time_str}; defaulting to minimal datetime")
+        return datetime.min
 
     def df_from_json(self, path, json_file):
-        match_df = pd.read_json(os.path.join(path, json_file), typ='series')
-        events_df = pd.read_json(os.path.join(path, match_df.eventsLogFile), typ='series')
+        # Load match JSON and normalize keys to lowercase
+        match_path = os.path.join(path, json_file)
+        with open(match_path, 'r', encoding='utf-8') as f:
+            match_obj = json.load(f)
+        match_norm = {str(k).lower(): v for k, v in match_obj.items()}
+
+        # Load events JSON and normalize keys to lowercase
+        events_file = match_norm.get('eventslogfile')
+        events_path = os.path.join(path, events_file)
+        with open(events_path, 'r', encoding='utf-8') as f:
+            events_raw = json.load(f)
+        if isinstance(events_raw, list):
+            events_norm = [{str(k).lower(): v for k, v in ev.items()} for ev in events_raw]
+        elif isinstance(events_raw, dict):
+            # Some files might be dict of events
+            events_norm = [{str(k).lower(): v for k, v in events_raw.items()}]
+        else:
+            events_norm = []
+
+        match_df = pd.Series(match_norm)
+        events_df = events_norm
         return match_df, events_df
 
-
-    def get_players_info_from_leaderboard(self, players_list : PlayersList):
-        for player in players_list.players:
+    def get_players_info_from_leaderboard(self, match : Match):
+        players = match.players
+        player : PlayerInMatch
+        for player in players:
             old_player = self.leaderboard.is_player_in_leaderboard(player.name)
-            if not old_player:
+            if not old_player and match.result.lower() not in {"canceled", "unknown"}:
                 self.leaderboard.new_player(player.name)
-            player_row = self.leaderboard.get_player_row(player.name)
+            if not old_player and match.result.lower() in {"canceled", "unknown"}:
+                player_row = self.leaderboard.canceled_new_player_row(player.name)
+            else:
+                player_row = self.leaderboard.get_player_row(player.name)
+            player.current_mmr = self.leaderboard.get_player_mmr(player_row)
             player.crewmate_current_mmr = self.leaderboard.get_player_crew_mmr(player_row)
             player.impostor_current_mmr = self.leaderboard.get_player_imp_mmr(player_row)
-            player.current_mmr = self.leaderboard.get_player_mmr(player_row)
             player.discord = self.leaderboard.get_player_discord(player_row)
 
+    def match_from_dataframe(self, match_df, events_df, k=32) -> Match:
+        player:PlayerInMatch
+        self.logger.debug(f"Filling Match {match_df['matchid']} object from the events file")
+        match = Match(id=match_df['matchid'], match_start_time=match_df['gamestarted'],
+                      result=match_df['result'], event_file_name=match_df['eventslogfile'], players = [], k=k)
 
-    def get_players_from_df(self, match_df) -> PlayersList:
-        players_array = [x.strip() for x in match_df.players.split(',')]
-        impostors_array = match_df.impostors.split(", ")
-        players_list = PlayersList()
-        result = match_df.result
+        players_array = [x.strip() for x in match_df['players'].split(',')]
+        impostors_array = [x.strip() for x in match_df['impostors'].split(",")]
+        match.impostors = str(impostors_array)
         for player_name in players_array:
             team = "impostor" if player_name in impostors_array else "crewmate"
-            players_list.add_player(PlayerInMatch(name=player_name, team=team))
-        self.get_players_info_from_leaderboard(players_list)
-        # self.logger.debug(f"Imported Players data from leaderboard for match {match_df.MatchID}")
-        try:
-            players_list.calculate_total_mmr()
-            # self.logger.debug(f"Calculated MMR changes for match {match_df.MatchID}")
-        except Exception as e:
-            self.logger.error(f"Error calculating MMR for match {match_df.eventsLogFile} {e}")
+            match.add_player(PlayerInMatch(name=player_name, team=team))
 
-        self.calculate_percentage_of_winning(players_list)
-        players_list.who_won(result)
-        
-        return players_list
+        self.get_players_info_from_leaderboard(match)
+        for player in match.players:
+            player.won = (player.team.lower() == 'crewmate' and match.result.lower() in ["crewmates win", "humansbyvote", "humansbytask"]) or \
+                        (player.team.lower() == 'impostor' and match.result.lower().startswith("impostor"))
 
-
-    def calculate_percentage_of_winning(self, players:PlayersList):
-        def winning_prob(avg_crew_elo, avg_imp_elo):
-            def log_function(diff):
-                a=0.07416865609596561 
-                b=0.02188284234744941
-                c=1.3188566776518948
-                d=-0.021900704104131766
-                return a * np.log(b * diff + c) + d
-
-            difference = avg_crew_elo - avg_imp_elo
-            if difference < 0:
-                difference = abs(difference)
-                prob_change = log_function(difference)
-                win_prob = 0.78 - prob_change
-                if win_prob < 0.62: win_prob = 0.62
-                return win_prob
-            else:
-                prob_change = log_function(difference)
-                win_prob = 0.78 + prob_change
-                if win_prob > 0.94: win_prob = 0.94
-                return win_prob
-            
-        players.crewmate_win_rate = winning_prob(players.avg_crewmate_mmr, players.avg_impostor_mmr)
-        players.impostor_win_rate = 1 - players.crewmate_win_rate
-
-        for player in players.players:
-            if player.team == 'impostor':
-                player.pecentage_of_winning = players.impostor_win_rate
-            elif player.team == 'crewmate':
-                player.pecentage_of_winning = players.crewmate_win_rate
-
-        # a = 0.043290409437842466
-        # b = 7.855256175054392
-        # c = 98.05742514755777
-        # d = -0.19883086302819628
-
-
-    def match_from_dataframe(self, match_df, events_df, players_list):
-        self.logger.debug(f"Filling Match {match_df.MatchID} object from the events file")
-        match = Match(id=match_df.MatchID, match_start_time=match_df.gameStarted,
-                      result=match_df.result, players=players_list, event_file_name=match_df.eventsLogFile)
         death_happened = False
         meeting_called_after_death = False
-        match_end_time = match_df.gameStarted
-        players_alive = 10
-        imps_alive = 2
+        match.match_end_time = match_df['gamestarted']
+        players_alive = len(players_array)
+        imps_alive = len(impostors_array)
+
+        match.crewmates_count = players_alive - imps_alive
+        match.impostors_count = imps_alive
+        player : PlayerInMatch
+        imp : PlayerInMatch
 
         for event in events_df:
-            event_type = event.get('Event')
+            event_type = event.get('event')
             if event_type == "Task":
-                player_name = event.get('Name')
-                match.players.get_player_by_name(player_name).finished_task()
-
-            elif event_type == "PlayerVote":
-                if death_happened:
-                    meeting_called_after_death = True
-                    
-                player_name = event.get('Player')
-                if match.players.is_player_impostor(event.get('Target')):
-                    match.players.get_player_by_name(player_name).correct_vote()
-                    
-                elif event.get('Target') !='none':
-                    match.players.get_player_by_name(player_name).incorrect_vote()
-
-                match.players.get_player_by_name(player_name).last_voted = event.get('Target')
-
-                if match_end_time < event.get('Time'):
-                    match_end_time = event.get('Time')
+                player_name = event.get('name')
+                player = match.get_player_by_name(player_name)
+                player.finished_task()
+                if player.tasks_complete == 10:
+                    if player.alive:
+                        player.finished_tasks_alive = True
+                    else:
+                        player.finished_tasks_dead = True
 
             elif event_type == "Death":
+                player_name = event.get('name')
+                if (match.get_player_by_name(player_name).alive == False):
+                    continue
                 players_alive -= 1 # one player killed
                 death_happened = True
-                player_name = event.get('Name')
-                match.players.get_player_by_name(player_name).alive = False
-                match.players.get_player_by_name(player_name).time_of_death = event.get('Time')
+                match.get_player_by_name(player_name).alive = False
+                match.get_player_by_name(player_name).time_of_death = event.get('time')
+                match.get_player_by_name(player_name).rounds_survived = match.rounds
                 if meeting_called_after_death:
-                    match.players.get_player_by_name(player_name).died_first_round = False
+                    match.get_player_by_name(player_name).died_first_round = False
                 else:
-                    match.players.get_player_by_name(player_name).died_first_round = True
-                killer = match.players.get_player_by_name(event.get('Killer'))
+                    match.get_player_by_name(player_name).died_first_round = True
 
-                if killer and killer.solo_imp: killer.kills_as_solo_imp += 1
+                killer = match.get_player_by_name(event.get('killer'))
+                if killer is not None:
+                    killer.got_a_kill()
+                    if killer.solo_imp: killer.kills_as_solo_imp += 1
+                if match.match_end_time < event.get('time'):
+                    match.match_end_time = event.get('time')
 
             elif event_type == "BodyReport":
                 meeting_called_after_death = True
@@ -154,149 +154,259 @@ class FileHandler:
                 if death_happened:
                     meeting_called_after_death = True
 
+            elif event_type == "PlayerVote":
+                if death_happened:
+                    meeting_called_after_death = True
+
+                player_name = event.get('player')
+
+                if str(event.get('target')).lower() =='none':
+                    match.get_player_by_name(player_name).skipped_vote()
+
+                elif match.is_player_imp(event.get('target')):
+                    match.get_player_by_name(player_name).correct_vote()
+
+                else:
+                    match.get_player_by_name(player_name).incorrect_vote()
+
+                match.get_player_by_name(player_name).last_voted = event.get('target')
+
+                if match.match_end_time < event.get('time'):
+                    match.match_end_time = event.get('time')
+
+
             elif event_type == "Exiled":
-                ejected_player_name = event.get('Player')
-                match.players.get_player_by_name(ejected_player_name).alive = False
-                match.players.get_player_by_name(ejected_player_name).time_of_death = event.get('Time')
-                ejected_imp = match.players.is_player_impostor(event.get('Player'))
-                if ejected_imp:
-                    impostors = match.players.get_players_by_team("impostor")
-                    for imp in impostors:
-                        if imp.name != ejected_player_name and players_alive >= 7:
-                            imp.solo_imp = True
+                ejected_player_name = event.get('player')
+                if match.get_player_by_name(ejected_player_name).alive == False: continue
+                match.get_player_by_name(ejected_player_name).alive = False
+                match.get_player_by_name(ejected_player_name).time_of_death = event.get('time')
+                match.get_player_by_name(ejected_player_name).rounds_survived = match.rounds
+                match.get_player_by_name(ejected_player_name).ejected_in_meeting = True
+
+                if match.is_player_imp(ejected_player_name):
                     imps_alive -= 1
+                    if players_alive >= 7:
+                        impostors = match.get_players_by_team("impostor")
+                        for player in impostors:
+                            if player.name == ejected_player_name:
+                                player.ejected_early_as_imp = True
+                            else:
+                                player.solo_imp = True
+                                match.solo_imp_game = True
+                    for player in match.get_players_by_team("crewmate"):
+                        if player.last_voted == ejected_player_name and player.alive: #crewmate voted an imp out
+                            player.correct_vote_on_eject.append([players_alive, 1])
 
-                    for player in match.players.players:
-                        if players_alive >= 7:
-                            player.ejected_early_as_imp = True
-                        if player.last_voted == ejected_player_name: #crewmate voted an imp out
-                            player.correct_vote_on_eject +=1
+                else: # voted a crewmate or skipped
+                    for player in match.players:
+                        if player.alive:
+                            if player.last_voted == ejected_player_name and player.team == "crewmate":
+                                player.got_crew_voted.append([players_alive, 1]) # all players who voted out a crewmate
 
-                else: # voted a crewmate 
-                    for player in match.players.players:
-                        if player.last_voted == ejected_player_name: # voted a crewmate out
-                            if player.team == "impostor":
-                                player.got_crew_voted +=1
-                            if player.team == "crewmate":
-                                if ((players_alive in [3,4]) or ((players_alive in [5,6,7]) and (imps_alive == 2))) and player.alive:
-                                    player.voted_wrong_on_crit = True
-                        else: #didn't vote the crewmate who got voted
-                            if player.team == "crewmate":
-                                if ((players_alive in [3,4]) or ((players_alive in [5,6,7]) and (imps_alive == 2))) and player.alive:
+                            elif player.team == "impostor":
+                                player.got_crew_voted.append([players_alive, 1])
+
+                            if ((players_alive in [3,4]) or ((players_alive in [5,6,7]) and (imps_alive == 2))) and player.team == "crewmate" and not player.won: #crit
+                                if match.is_player_imp(player.last_voted):
                                     player.right_vote_on_crit_but_loss = True
-                players_alive -= 1 # one player ejected
 
-            elif event_type == "MeetingEnd":
-                if (event.get("Result") == "Skipped") and ((players_alive in [5,6]) and (imps_alive == 2)) and player.alive:
-                    for player in match.players.players:
-                        if player.team == "crewmate":
-                            if player.last_voted == "none":
-                                player.voted_wrong_on_crit = True
-                            else: 
-                                voted_imp = match.players.is_player_impostor(player.last_voted)
-                                if not voted_imp:
+                                elif players_alive in [3,5,6]:
+                                    player.voted_wrong_on_crit = True
+                                elif players_alive in [4,7] and (player.last_voted != "Skipped" and player.last_voted != "none"):
                                     player.voted_wrong_on_crit = True
 
-        for player in match.players.players:
+                players_alive -= 1 # one player ejected
+                if imps_alive == 0 or (players_alive==1 and imps_alive==1) or (players_alive==2 and imps_alive==2): #game ended
+                    pass
+                else:
+                    match.rounds+=1
+
+            elif event_type == "MeetingEnd" and (event.get("result") == "Skipped" or event.get("result") == "Tie"):
+                match.rounds+=1
+                if (((players_alive in [5,6]) and (imps_alive == 2)) or players_alive == 3):
+                    for player in match.players:
+                        if not player.alive: continue
+                        if player.team == "crewmate" and not player.won:
+                            if (player.last_voted == "none" or player.last_voted == None or player.last_voted == "missed" or not match.is_player_imp(player.last_voted)):
+                                player.voted_wrong_on_crit = True
+                            elif match.is_player_imp(player.last_voted):
+                                player.right_vote_on_crit_but_loss = True
+
+        match_start_time = self.parse_time(match.match_start_time)
+        match_end_time = self.parse_time(match.match_end_time)
+        match.match_duration = str(match_end_time - match_start_time)
+        for player in match.players:
+            player.match_id = match.id
+            player.match_result = match.result
+            player.total_rounds = match.rounds
+            player.voting_accuracy = player.number_of_correct_votes / (player.number_of_placed_votes - player.number_of_skip_votes) if player.team == 'crewmate' and (player.number_of_placed_votes - player.number_of_skip_votes) != 0 else 0
             if player.time_of_death is None:
-                player.time_of_death = match_end_time
-        match.match_end_time = match_end_time
+                player.time_of_death = match.match_end_time
+            time_of_death = self.parse_time(player.time_of_death)
+            player.alive_time = str(time_of_death - match_start_time)
+            player.match_time = match.match_duration
+            if player.match_result == "Impostors Win" and player.solo_imp:
+                player.won_as_solo_imp = True
+        match.alive_players = players_alive
+        match.alive_impostors = imps_alive
+        for player in match.players:
+            if match.get_player_by_name(player.name).rounds_survived == 0:
+                match.get_player_by_name(player.name).rounds_survived = match.rounds
         return match
 
-
-    def calculate_mmr_gain_loss(self, match):
-        for player in match.players.players:
-            player.calculate_performance_and_mmr()
-
-
-    def update_leaderboard(self, match):
-        for player in match.players.players:
-            self.leaderboard.update_player(player)
-
-
-    def match_from_file(self, json_file=None) -> Match:
+    def match_from_file(self, json_file=None, k=32) -> Match:
         try:
             match_df, events_df = self.df_from_json(self.matches_path, json_file)
         except Exception as e:
-            self.logger.error(str(e)+"Error reading match from file"+str(json_file))
+            error_message = f"Error reading match from file {json_file}: {str(e)}"
+            self.logger.error(error_message)
             return None
 
-        if match_df.result in ["Canceled", "Cancelled", "Unknown"] or events_df is None or match_df is None:
-            try:
-                players_list = self.get_players_from_df(match_df)
-                match = self.match_from_dataframe(match_df, events_df, players_list)
-                match.match_file_name = json_file
-                return match
-            except:
-                self.logger.error(f"Error with file {match_df.eventsLogFile}")
+        if match_df is None or events_df is None:
+            error_message = f"Error with file {json_file}: {match_df} {events_df}"
+            self.logger.error(error_message)
+            return None
 
-        players_list = self.get_players_from_df(match_df)
-        match = self.match_from_dataframe(match_df, events_df, players_list)
+        match_id = match_df['matchid']
+
+        # Check if this is a special match
+        try:
+            special_matches_df = pd.read_csv(self.special_matches_file)
+            special_match = special_matches_df[special_matches_df['match_id'] == match_id]
+            if not special_match.empty:
+                # Get the multiplier type and set appropriate k value
+                multiplier = special_match.iloc[0]['multiplier']
+                k = 64 if multiplier == 'double' else 96 if multiplier == 'triple' else 32
+                self.logger.info(f"Processing special match {match_id} with {multiplier} multiplier (k={k})")
+        except Exception as e:
+            self.logger.error(f"Error checking special matches file: {str(e)}")
+            # Continue with default k value if there's an error
+            pass
+
+        match = self.match_from_dataframe(match_df, events_df, k=k)
         match.match_file_name = json_file
+        if match.result in ["Canceled", "Unknown"]:
+            return match
+
+        match.calculate_avg_mmr()
+        match.calculate_percentage_of_winning()
+        match.calculate_mmr()
         return match
-        
 
-    def get_sorted_files_with_match(self):
-        files = os.listdir(self.matches_path)
-        filtered_files = [file for file in files if "match.json" in file.lower()]
-        sorted_files = sorted(filtered_files, key=lambda x: self.get_game_started_timestamp(x))
-        return sorted_files
+    def get_sorted_match_files(self):
+        def get_game_started_timestamp(file_name):
+            file_path = os.path.join(self.matches_path, file_name)
+            try:
+                with open(file_path, 'r', encoding='utf-8') as file:
+                    data = json.load(file)
+            except Exception as e:
+                self.logger.error(f"Failed to read match file {file_name}: {e}")
+                return datetime.min
 
-
-    def get_game_started_timestamp(self, file_name):
-        file_path = os.path.join(self.matches_path, file_name)
-        with open(file_path, 'r') as file:
-            data = json.load(file)
-            game_started = data["gameStarted"]
-            game_started_time = datetime.strptime(game_started, "%m/%d/%Y %H:%M:%S")
+            # Prefer 'gameStarted' then fallback
+            game_started = data.get("gameStarted") or data.get("gamestarted") or data.get("GameStarted") or data.get("GameStart")
+            game_started_time = self.parse_time(game_started)
             return game_started_time
 
+        files = os.listdir(self.matches_path)
+        filtered_files = [file for file in files if "match.json" in file.lower()]
+        # Sort with robust key; files without timestamps will be first (datetime.min)
+        sorted_files = sorted(filtered_files, key=lambda x: get_game_started_timestamp(x))
+        return sorted_files
 
-    def process_unprocessed_matches(self):
-        if not os.path.exists(self.processed_matches_csv):
-            pd.DataFrame(columns=['Match File Name']).to_csv(self.processed_matches_csv, index=False)
-        processed_matches = set(pd.read_csv(self.processed_matches_csv)['Match File Name'])
-        sorted_files_with_match = self.get_sorted_files_with_match()
-        match = None
-        # data_df = pd.DataFrame(columns=['Avg Impostor MMR', 'Avg Crewmate MMR', 'Win Status'])
-        for file in sorted_files_with_match:
-            if file not in processed_matches:
-                match = self.match_from_file(file)
-                if match:
-                    if match.result == "Canceled" or match.result == "Unknown":
-                        self.logger.info(f"Skipped {match.match_file_name} because result is {match.result}")
-                    else:
-                        # res = 0
-                        # if match.result == "Crewmates Win":
-                        #     res = 1
-                        # data_df = pd.concat([pd.DataFrame([[match.players.avg_impostor_mmr,match.players.avg_crewmate_mmr,res]], columns=data_df.columns), data_df], ignore_index=True)
-                        self.logger.info(f"Processed Match ID:{match.id}")
-                        self.calculate_mmr_gain_loss(match)
-                        self.update_leaderboard(match)
-                    processed_matches.add(file)
-        # data_df.to_csv('game_data.csv', index=False)
-        pd.DataFrame(processed_matches, columns=['Match File Name']).to_csv(self.processed_matches_csv, index=False)
-        if match:
-            return match
-        else:
-            return None
+    def update_leaderboard(self, match:Match):
+        for player in match.players:
+            self.leaderboard.update_player(player)
+        self.leaderboard.save()
 
+    def fully_update_lb(self):
+        player_stats = self.events_leaderboard.stats_leaderboard()
+        if self.leaderboard.leaderboard.index.name != 'Player Name':
+            self.leaderboard.leaderboard.reset_index(inplace=True)
+            self.leaderboard.leaderboard.set_index('Player Name', inplace=True)
+        self.leaderboard.leaderboard.update(player_stats)
+        self.leaderboard.leaderboard.reset_index(inplace=True)
+        self.leaderboard.leaderboard.set_index('Rank', inplace=True)
+        self.leaderboard.leaderboard = self.leaderboard.leaderboard.fillna(0)
+        self.leaderboard.save()
 
-    def process_match_by_id(self, match_id):
-        if not os.path.exists(self.processed_matches_csv):
-            pd.DataFrame(columns=['Match File Name']).to_csv(self.processed_matches_csv, index=False)
-        processed_matches = set(pd.read_csv(self.processed_matches_csv)['Match File Name'])  
+    def process_match_by_id(self, match_id, k=32):
+        processed_matches = set(self.events_leaderboard.events_lb['Match ID'].unique())
         match_file_name = self.find_matchfile_by_id(match_id)
-        match = self.match_from_file(match_file_name)
-        if match_file_name in processed_matches:
+        match = self.match_from_file(match_file_name, k=k)
+        if match_id in processed_matches:
+            self.logger.info(f"Match {match_id} has already been processed - skipping")
             return match
+        if match.result != "Unknown":
+            self.events_leaderboard.add_match_events(match=match)
         if match.result != "Canceled" and match.result != "Unknown":
-            self.calculate_mmr_gain_loss(match)
             self.update_leaderboard(match)
-        processed_matches.add(match_file_name)
-        pd.DataFrame(processed_matches, columns=['Match File Name']).to_csv(self.processed_matches_csv, index=False)
+            self.fully_update_lb()
+            self.logger.info(f"Match {match_id} has been added to the leaderboard")
+        else:
+            self.logger.info(f"Match {match_id} is a Cancel - skipping")
+        
         return match
 
+    def process_unprocessed_matches(self):
+        processed_matches = set(self.events_leaderboard.events_lb['Match ID'].unique())
+        sorted_files_with_match = self.get_sorted_match_files()
+        match = None
+        special_matches_df = None
+        try:
+            special_matches_df = pd.read_csv(config['special_matches_file'])
+        except Exception as e:
+            self.logger.error(f"Error loading special matches file: {str(e)}")
+
+        # Check if this is a fresh calculation (events file is empty)
+        is_fresh_calculation = len(self.events_leaderboard.events_lb) == 0
+        if is_fresh_calculation:
+            self.logger.info("Events file is empty - this is a fresh calculation, will apply stored MMR changes after processing")
+
+        for file in sorted_files_with_match:
+            try:
+                with open(os.path.join(self.matches_path, file), 'r') as f:
+                    match_data = json.load(f)
+                    match_id = match_data.get('MatchID') or match_data.get('matchid')
+                    if match_id in processed_matches:
+                        continue
+
+                    # Check if it's a special match
+                    k = 32  # default k value
+                    if special_matches_df is not None and match_id:
+                        special_match = special_matches_df[special_matches_df['match_id'] == match_id]
+                        if not special_match.empty:
+                            multiplier = special_match.iloc[0]['multiplier']
+                            k = 64 if multiplier == 'double' else 96 if multiplier == 'triple' else 32
+                            self.logger.info(f"Found special match {match_id} with {multiplier} multiplier (k={k})")
+
+                    # Create match with appropriate k value
+                    match = self.match_from_file(file, k=k)
+
+                    if match:
+                        self.events_leaderboard.add_match_events(match)
+                        if match.result == "Canceled" or match.result == "Unknown":
+                            self.logger.info(f"Skipped {match.match_file_name} because result is {match.result}")
+                        elif len(match.players) != 10:
+                            self.logger.info(f"Skipped {match.match_file_name} because it doesn't have 10 players")
+                        else:
+                            self.logger.info(f"Processed Match ID:{match.id}")
+                            self.update_leaderboard(match)
+                    processed_matches.add(match_id) # Add match_id to processed_matches set
+
+            except Exception as e:
+                self.logger.error(f"Error processing file {file}: {str(e)}")
+                continue
+        self.fully_update_lb()
+        
+        # Only apply stored MMR changes if this was a fresh calculation
+        if is_fresh_calculation:
+            self.logger.info("Applying stored MMR changes after fresh calculation...")
+            self.apply_stored_mmr_changes()
+        else:
+            self.logger.info("Skipping stored MMR changes - this was not a fresh calculation")
+        
+        return match
 
     def find_matchfile_by_id(self, match_id):
         json_files = [file for file in os.listdir(self.matches_path) if file.endswith('_match.json')]
@@ -304,87 +414,128 @@ class FileHandler:
             match_file_path = os.path.join(self.matches_path, match_file_name)
             with open(match_file_path, 'r') as f:
                 match_data = json.load(f)
-                if str(match_data.get('MatchID')) == str(match_id):
+                found_id = match_data.get('MatchID') or match_data.get('matchid')
+                if str(found_id) == str(match_id):
                     return match_file_name
         return None
 
+    def change_player_name(self, old_name, new_name):
+        def read_json_file(filename):
+            with open(os.path.join(self.matches_path, filename), 'r') as file:
+                return json.load(file)
 
-    def change_result_to_cancelled(self, match_id):
+        def write_json_file(filename, data):
+            with open(os.path.join(self.matches_path, filename), 'w') as file:
+                json.dump(data, file, indent=4)
 
-        match_file_name = self.find_matchfile_by_id(match_id)
-        if match_file_name is None:
-            self.logger.error(f"Can't find {match_id} - Could not change match to Cancelled")
+        player_row = self.leaderboard.get_player_row(old_name)
+        if player_row is None:
             return False
 
-        match = self.match_from_file(match_file_name)
-        if match.result == "Canceled":
-            self.logger.info(f"Match {match_id} is already a Cancel")
-            return False
-        
-        self.logger.info(f"Changing match {match_id} to Canceled")
-        for player in match.players.players:
-            player.canceled = True
+        index = player_row['Rank']
+        self.leaderboard.leaderboard.at[index, 'Player Name'] = new_name
+        self.leaderboard.save()
+        self.logger.info(f"Player name '{old_name}' updated to '{new_name}' in Leaderboard")
+        self.events_leaderboard.events_lb.loc[self.events_leaderboard.events_lb['Player Name'] == player_row['Player Name'], 'Player Name'] = new_name
+        self.events_leaderboard.save()
+        self.logger.info(f"Player name '{old_name}' updated to '{new_name}' in Events Leaderboard")
 
-        self.calculate_mmr_gain_loss(match)
-        self.update_leaderboard(match)
+        for filename in os.listdir(self.matches_path):
+            if filename.endswith('.json'):
+                data = read_json_file(filename)
+                change_made = False
 
-        match.result == 'Canceled'
-        file_path = os.path.join(self.matches_path, match_file_name)
-        with open(file_path, 'r') as f:
-            match_data = json.load(f)
-        match_data['result'] = 'Canceled'
-        with open(file_path, 'w') as f:
-            json.dump(match_data, f, indent=4)
-        return match
-    
+                if 'players' in data:
+                    players = data['players'].split(',')
+                    for player in players: player = player.rstrip()
+                    if old_name in players:
+                        players[players.index(old_name)] = new_name
+                        data['players'] = ','.join(players)
+                        self.logger.debug(f"Player name '{old_name}' updated to '{new_name}' in {filename}")
+                        change_made = True
+                    impostors = data.get('impostors', '').split(',')
+                    for imp in impostors: imp = imp.rstrip()
+                    if old_name in impostors:
+                        impostors[impostors.index(old_name)] = new_name
+                        data['impostors'] = ','.join(impostors)
+                        self.logger.debug(f"Impostor name '{old_name}' updated to '{new_name}' in {filename}")
+                        change_made = True
 
-    def change_result_to_crew_win(self, match_id):
-        match_file_name = self.find_matchfile_by_id(match_id)
-        if match_file_name is None:
-            self.logger.error(f"Can't find {match_id} - Could not change match to a Crewmates Win")
-            return False
-        
-        file_path = os.path.join(self.matches_path, match_file_name)
-        with open(file_path, 'r') as f:
-            match_data = json.load(f)
-        if match_data['result'] != 'Crewmates Win':
-            self.change_result_to_cancelled(match_id)
-            match_data['result'] = 'Crewmates Win'
-            with open(file_path, 'w') as f:
-                json.dump(match_data, f, indent=4)
-            match = self.match_from_file(match_file_name)
-            self.calculate_mmr_gain_loss(match)
-            self.update_leaderboard(match)
-            self.logger.info(f"Changed {match_id} to a Crewmates Win")
-            return True
-        else:
-            self.logger.error(f"Match {match_id} Is already a Crewmates Win")
-            return False
-    
+                if isinstance(data, list):
+                    for event in data:
+                        # Normalize event keys to lowercase for in-place updates
+                        if any(k for k in event.keys() if k != k.lower()):
+                            keys_lower = {k: event[k] for k in list(event.keys())}
+                            for k in list(keys_lower.keys()):
+                                if k != k.lower():
+                                    event[k.lower()] = keys_lower[k]
+                                    del event[k]
+                        for key in ['name', 'player', 'target', 'killer','deadplayer', 'impostors']:
+                            if key in event:
+                                if isinstance(event[key], str) and event[key].endswith(" |"):
+                                    event[key] = event[key][:-2]
+                                if event[key] == old_name:
+                                    change_made = True
+                                    event[key] = new_name
+                                if key == 'impostors' and isinstance(event[key], str):
+                                    if old_name in event[key].split(','):
+                                        event[key] = event[key].replace(old_name, new_name)
+                                        change_made = True
+                if change_made:
+                    write_json_file(filename, data)
+                    self.logger.debug(f"Player name '{old_name}' updated to '{new_name}' in {filename}")
+        return True
 
-    def change_result_to_imp_win(self, match_id):
-        match_file_name = self.find_matchfile_by_id(match_id)
-        if match_file_name is None:
-            self.logger.error(f"Can't find {match_id} - Could not change match to Impostors Win")
-            return False
-        
-        file_path = os.path.join(self.matches_path, match_file_name)
-        with open(file_path, 'r') as f:
-            match_data = json.load(f)
-        if match_data['result'] != 'Impostors Win': 
-            self.change_result_to_cancelled(match_id)
-            match_data['result'] = 'Impostors Win'
-            with open(file_path, 'w') as f:
-                json.dump(match_data, f, indent=4)
-            match = self.match_from_file(match_file_name)
-            self.calculate_mmr_gain_loss(match)
-            self.update_leaderboard(match)
-            self.logger.error(f"Changed {match_id} to an Impostors Win")
-            return True
-        else:
-            self.logger.error(f"Match {match_id} Is already an Impostors Win")
-            return False
-        
+    def apply_stored_mmr_changes(self):
+        """Apply all stored MMR changes from the CSV file"""
+        try:
+            mmr_changes_file = 'mmr_changes.csv'
+            if not os.path.exists(mmr_changes_file):
+                self.logger.info("No MMR changes file found, skipping stored changes")
+                return
+                
+            df = pd.read_csv(mmr_changes_file)
+            if df.empty:
+                self.logger.info("MMR changes file is empty, skipping stored changes")
+                return
+                
+            self.logger.info(f"Applying {len(df)} stored MMR changes...")
+            
+            for index, row in df.iterrows():
+                try:
+                    player_name = row['Player Name']
+                    mmr_value = float(row['MMR Value'])
+                    change_type = row['Change Type']
+                    moderator = row['Moderator']
+                    reason = row.get('Reason', '')
+                    
+                    # Get player row
+                    player_row = self.leaderboard.get_player_row(player_name)
+                    if player_row is None:
+                        self.logger.warning(f"Player {player_name} not found in leaderboard, skipping MMR change")
+                        continue
+                    
+                    # Apply the MMR change based on type
+                    if change_type == 'crew':
+                        self.leaderboard.mmr_change_crew(player_row, mmr_value)
+                        change_text = "Crew"
+                    elif change_type == 'imp':
+                        self.leaderboard.mmr_change_imp(player_row, mmr_value)
+                        change_text = "Impostor"
+                    else:  # total
+                        self.leaderboard.mmr_change(player_row, mmr_value)
+                        change_text = "Total"
+                    
+                    self.logger.info(f"Applied stored MMR change: {player_name} {mmr_value:+} ({change_text}) by {moderator}")
+                    
+                except Exception as e:
+                    self.logger.error(f"Error applying stored MMR change at row {index}: {str(e)}")
+                    continue
+            
+            self.logger.info("Finished applying stored MMR changes")
+            
+        except Exception as e:
+            self.logger.error(f"Error applying stored MMR changes: {str(e)}")
 
     def match_info_by_id(self, match_id):
         match_file_name = self.find_matchfile_by_id(match_id)
@@ -395,88 +546,85 @@ class FileHandler:
         with open(file_path, 'r') as f:
             match_data = json.load(f)
         return match_data
-    
 
-    def change_player_name(self, old_name, new_name):
-        def read_json_file(filename):
-            with open(os.path.join(self.matches_path, filename), 'r') as file:
-                return json.load(file)
-    
-        def write_json_file(filename, data):
-            with open(os.path.join(self.matches_path, filename), 'w') as file:
-                json.dump(data, file, indent=4)
+    def change_match_result(self, match_id, new_result:str)->tuple[Match, str]:
+        new_result_lower = new_result.lower()
+        if new_result_lower.startswith('crew'):
+            result = 'Crewmates Win'
+        elif new_result_lower.startswith('imp'):
+            result = 'Impostors Win'
+        elif new_result_lower.startswith('canc'):
+            result = 'Canceled'
+        else:
+            return False, "Wrong input"
 
-        for filename in os.listdir(self.matches_path):
-            if filename.endswith('.json'):
-                data = read_json_file(filename)
-                change_made = False
-                
-                if 'players' in data:
-                    players = data['players'].split(',')
-                    if old_name in players:
-                        players[players.index(old_name)] = new_name
-                        data['players'] = ','.join(players)
-                        self.logger.debug(f"Player name '{old_name}' updated to '{new_name}' in {filename}")
-                        change_made = True
-                    impostors = data.get('impostors', '').split(', ')
-                    if old_name in impostors:
-                        impostors[impostors.index(old_name)] = new_name
-                        data['impostors'] = ', '.join(impostors)
-                        self.logger.debug(f"Impostor name '{old_name}' updated to '{new_name}' in {filename}")
-                        change_made = True
+        match_file_name = self.find_matchfile_by_id(match_id)
+        if match_file_name is None:
+            self.logger.error(f"Can't find {match_id} - Could not change match to {result}")
+            return False, f"Can't find {match_id} - Could not change match to {result}"
 
-                if isinstance(data, list):
-                    for event in data:
-                        for key in ['Name', 'Player', 'Target', 'Killer','DeadPlayer', 'Impostors']:
-                            if key in event:
-                                if event[key].endswith(" |"):
-                                    event[key] = event[key][:-2]  # Remove last two characters
-                                if event[key] == old_name:
-                                    change_made = True
-                                    event[key] = new_name
-                                if key == 'Impostors':
-                                    if old_name in event[key].split(','): 
-                                        event[key] = event[key].replace(old_name, new_name)
-                                        change_made = True
-                if change_made: 
-                    write_json_file(filename, data)
-                    self.logger.debug(f"Player name '{old_name}' updated to '{new_name}' in {filename}")
+        match = self.match_from_file(match_file_name)
+        if match.result == result:
+            self.logger.info(f"Match {match_id} is already a {result}")
+            return False, f"Match {match_id} is already a {result}"
 
-        player_row = self.leaderboard.get_player_row(old_name)
-        if player_row is not None:
-            index = player_row['Rank']
-            self.leaderboard.leaderboard.at[index, 'Player Name'] = new_name
-            self.leaderboard.save_leaderboard()
-            self.logger.debug(f"Player name '{old_name}' updated to '{new_name}' in Leaderboard")
+        self.logger.info(f"Changing match {match_id} to {result}")
+        match_rows = self.events_leaderboard.events_lb[self.events_leaderboard.events_lb['Match ID'] == match_id]
 
+        self.leaderboard.leaderboard.reset_index(inplace=True)
+        changes_df = match_rows[['Player Name', 'MMR Gain', 'Crewmate MMR Gain', 'Impostor MMR Gain']].set_index('Player Name')
+        self.leaderboard.leaderboard = self.leaderboard.leaderboard.set_index('Player Name').join(changes_df, how='left')
+        for change_col, target_col in zip(['MMR Gain', 'Crewmate MMR Gain', 'Impostor MMR Gain'], ['MMR', 'Crewmate MMR', 'Impostor MMR']):
+            self.leaderboard.leaderboard[target_col] -= self.leaderboard.leaderboard[change_col].fillna(0)
+        self.leaderboard.leaderboard.drop(columns=['MMR Gain', 'Crewmate MMR Gain', 'Impostor MMR Gain'], inplace=True)
+        self.leaderboard.leaderboard.reset_index(inplace=True)
+        self.leaderboard.leaderboard.set_index('Rank', inplace=True)
 
-    def mine_matches_data(self): #testing and development only
-        match : Match
-        sorted_files_with_match = self.get_sorted_files_with_match()
-        match=None
-        data_df = pd.DataFrame(columns=['MMR diff'])
-        for file in sorted_files_with_match:
-            match = self.match_from_file(file)
-            if match:
-                if match.result == "Canceled" or match.result == "Unknown":
-                    self.logger.info(f"skipped {match.match_file_name} because result is {match.result}")
-                else:
-                    res = 0
-                    if match.result == "Crewmates Win":
-                        res = 1
-                    data_df = pd.concat([pd.DataFrame([[round(match.players.avg_crewmate_mmr,1)-round(match.players.avg_impostor_mmr,1)]], columns=data_df.columns), data_df], ignore_index=True)
-                    self.logger.info(f"Processed Match ID:{match.id}")
+        match.result = result
+        self.events_leaderboard.remove_match(match_id)
 
-        data_df.to_csv('game_data.csv', index=False)
-    
+        file_path = os.path.join(self.matches_path, match_file_name)
+        with open(file_path, 'r') as f:
+            match_data = json.load(f)
+        match_data['result'] = result
+        with open(file_path, 'w') as f:
+            json.dump(match_data, f, indent=4)
+
+        self.process_match_by_id(match_id)
+        self.events_leaderboard.events_lb = self.events_leaderboard.events_lb.sort_values(by='Match ID')
+        self.events_leaderboard.save()
+
+        return match, f"Match {match_id} changed to {result}"
 
 
 ###############################################
-# path = "~/Resistance/Preseason/"
+# path = "~/Resistance/Full_Matches/"
+# path = "~/Resistance/crit/"
 
 # path = "~/plugins/MatchLogs/Preseason"
-# f = FileHandler(path, "leaderboard_full.csv")
-# print(f.find_matchfile_by_id(25))
+# path = "c:/Users/Ayman/among us development/AmongUsRankedDiscordBot/Preseason"
+# f = FileHandler(path, "preseason")
+
+# print(f.match_from_file("531_match.json").match_details())
+# print(f.match_from_file("2310_match.json").match_details())
+# print(f.match_from_file("2211_match.json").match_details())
+
+#f.process_unprocessed_matches()
+    # await database_manager.add_match(match)
+    # await database_manager.add_match(match2)
+    # await database_manager.add_match(match3)
+# start_time = datetime.now()
+# f.process_unprocessed_matches()
+# f.leaderboard.save()
+# f.events_leaderboard.save()
+# f.fully_update_lb()
+# end_time = datetime.now()
+# print(end_time-start_time)
+    # await database_manager.add_match(match2)
+
+    # Your code to add matches or other operations
+    # await db.add_match(match)
+
 # match = f.process_match_by_id(25)
 # print(match)
 # f.mine_matches_data()

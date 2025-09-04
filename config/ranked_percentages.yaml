@@ -1,0 +1,46 @@
+# Ranked Percentages Configuration
+# This file contains all the percentage values used in MMR calculations
+
+# Base winning percentages for crewmates and impostors
+crew_base_win_percentage: 0.78  # Base crewmate winning percentage (old: 0.78)
+imp_base_win_percentage: 0.22   # Base impostor winning percentage (old: 0.22)
+
+# Win probability calculation constants (log function parameters)
+win_prob_a: 0.07416865609596561  # Log function parameter a (old: 0.07416865609596561)
+win_prob_b: 0.02188284234744941  # Log function parameter b (old: 0.02188284234744941)
+win_prob_c: 1.3188566776518948   # Log function parameter c (old: 1.3188566776518948)
+win_prob_d: -0.021900704104131766 # Log function parameter d (old: -0.021900704104131766)
+
+# Win probability bounds
+min_win_probability: 0.62  # Minimum win probability (old: 0.62)
+max_win_probability: 0.94  # Maximum win probability (old: 0.94)
+
+# Crewmate performance modifiers
+crew_correct_vote_bonus: 0.10      # Bonus per correct vote (+4%) (old: 0.04)
+crew_incorrect_vote_penalty: 0.06  # Penalty per incorrect vote (-8%) (old: 0.04)
+crew_got_voted_penalty: 0.12       # Penalty per time voted out (-16%) (old: 0.08)
+crew_task_bonus: 0.01              # Bonus per task completed (+1%) (old: 0.01)
+crew_wrong_crit_penalty: 0.40      # Penalty for voting wrong on critical (-50%) (old: 0.40)
+crew_correct_eject_bonus: 0.025    # Bonus per player alive when correctly ejecting (+3.5%) (old: 0.025)
+crew_right_crit_loss_bonus: 0.50   # Bonus for voting right on critical but losing (+50%) (old: 0.30)
+
+# Crewmate survival modifiers
+crew_win_survival_bonus: 0.01      # Bonus per round survived when winning (+1%) (old: 0.01)
+crew_loss_survival_penalty: 0.02   # Penalty per round survived when losing (-2%) (old: 0.02)
+crew_solo_imp_survival_penalty: 0.02 # Additional penalty in solo imp games (-2%) (old: 0.02)
+
+# Impostor performance modifiers
+imp_early_eject_penalty: 0.10      # Penalty for being ejected early (-10%) (old: 0.10)
+imp_solo_bonus: 0.10               # Bonus for being solo impostor (+10%) (old: 0.10)
+imp_got_voted_bonus: 0.05          # Bonus per time crewmates voted for you (+5%) (old: 0.05)
+imp_solo_kill_bonus: 0.05          # Bonus per kill as solo impostor (+5%) (old: 0.05)
+imp_solo_win_bonus: 0.10           # Bonus for winning as solo impostor (+10%) (old: 0.10)
+imp_kill_bonus: 0.05               # Bonus per kill (+5%) (old: 0.05)
+
+# Performance bounds
+min_performance: 0.40              # Minimum performance value (old: 0.40)
+died_first_win_performance: 0.40   # Performance when died first round but won (old: 0.60)
+max_loss_performance: 3.00         # Maximum performance for losses (died first round) (old: 2.00)
+
+# K-factor for MMR calculations
+k_factor: 32                       # K-factor used in MMR calculations (old: 32)

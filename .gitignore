@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+
+# Virtual environments
+.venv/
+venv/
+
+# OS / IDE
+.DS_Store
+.vscode/
+
+# Local config with secrets
+config/config.yaml
+
+# Logs
+*.log
+
+*.pyc
+assets/
+Matches/
+delete_wrong_matches.py
+testing.py
+processed_matches.py
+*.log
